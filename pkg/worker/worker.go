@@ -1,7 +1,15 @@
 package worker
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net"
+	"os"
+	"os/exec"
+	"sync"
 
 	"github.com/uwine4850/anthill/pkg/config"
 	"github.com/uwine4850/anthill/pkg/plug"
@@ -83,5 +91,87 @@ func initWorkerAnt(ant WorkerAnt, workerConfig *config.WorkerConfig) error {
 	if err := ant.Args(workerConfig.Args); err != nil {
 		return err
 	}
+	return nil
+}
+
+type Runner struct {
+	stdout map[string]string
+}
+
+func (r *Runner) RunWorkers(ants []Ant) {
+	var wg sync.WaitGroup
+	for i := 0; i < len(ants); i++ {
+		wg.Add(1)
+		go func(ant Ant) {
+			defer wg.Done()
+			err := runPluginStreaming(ant.Name)
+			if err != nil {
+				panic(err)
+			}
+		}(ants[i])
+	}
+	wg.Wait()
+}
+
+func runPluginStreaming(antName string) error {
+	cmd := exec.Command(os.Args[0], "run", antName)
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	go streamOutput(stdoutPipe, antName)
+	go streamOutput(stderrPipe, antName+"[ERR]")
+
+	return cmd.Wait()
+}
+
+func streamOutput(r io.ReadCloser, prefix string) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fmt.Printf("[%s] %s\n", prefix, scanner.Text())
+	}
+}
+
+type Request struct {
+	Action string `json:"action"`
+	Name   string `json:"name"`
+}
+
+func RunAllWorkers() error {
+	w, err := config.ParseWorkers("workers.yaml")
+	if err != nil {
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(w.Workers); i++ {
+		wg.Add(1)
+		go func(name string) {
+			conn, err := net.Dial("unix", "/tmp/anthill.sock")
+			if err != nil {
+				log.Fatal("failed to connect to orchestrator:", err)
+			}
+			defer conn.Close()
+
+			defer wg.Done()
+			req := Request{Action: "run", Name: w.Workers[i].Name}
+			enc := json.NewEncoder(conn)
+			err = enc.Encode(req)
+			if err != nil {
+				log.Fatal("failed to send request:", err)
+			}
+		}(w.Workers[i].Name)
+	}
+	wg.Wait()
 	return nil
 }

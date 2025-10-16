@@ -1,30 +1,15 @@
 package main
 
 import (
-	"fmt"
-
-	"github.com/uwine4850/anthill/pkg/config"
-	"github.com/uwine4850/anthill/pkg/worker"
+	"github.com/uwine4850/anthill/pkg/server"
 )
 
 func main() {
-	ants, err := worker.WorkerAntListFromPlugins("plugins.yaml")
-	if err != nil {
+	o := server.NewOrchestartor()
+	if err := o.CollectAnts(); err != nil {
 		panic(err)
 	}
-	a, err := worker.TotalWorkerAntList(ants)
-	if err != nil {
+	if err := o.Listen(); err != nil {
 		panic(err)
 	}
-
-	w, err := config.ParseWorkers("workers.yaml")
-	if err != nil {
-		panic(err)
-	}
-
-	wcurrent, err := worker.CurrentAnts(w, a)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(wcurrent)
 }

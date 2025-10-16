@@ -1,6 +1,9 @@
 package worker
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 var builtinWorkerAnts = []WorkerAnt{
 	&Command{},
@@ -9,7 +12,14 @@ var builtinWorkerAnts = []WorkerAnt{
 type Command struct{}
 
 func (c *Command) Run() error {
-	fmt.Println("Run...")
+	time.Sleep(2 * time.Second)
+	fmt.Println("Run... builtin")
+	time.Sleep(2 * time.Second)
+	fmt.Println("Run...1 builtin")
+	time.Sleep(2 * time.Second)
+	fmt.Println("Run...2 builtin")
+	time.Sleep(2 * time.Second)
+	fmt.Println("Run...3 builtin")
 	return nil
 }
 
@@ -22,6 +32,5 @@ func (c *Command) Info() string {
 }
 
 func (c *Command) Args(values map[string]string) error {
-	fmt.Println("Args:", values)
 	return nil
 }
