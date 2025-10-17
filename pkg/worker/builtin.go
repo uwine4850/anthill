@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -11,7 +12,7 @@ var builtinWorkerAnts = []WorkerAnt{
 
 type Command struct{}
 
-func (c *Command) Run() error {
+func (c *Command) Run(ctx context.Context) error {
 	time.Sleep(2 * time.Second)
 	fmt.Println("Run... builtin")
 	time.Sleep(2 * time.Second)

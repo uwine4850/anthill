@@ -1,14 +1,11 @@
 package worker
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
-	"os"
-	"os/exec"
 	"sync"
 
 	"github.com/uwine4850/anthill/pkg/config"
@@ -16,7 +13,7 @@ import (
 )
 
 type WorkerAnt interface {
-	Run() error
+	Run(ctx context.Context) error
 	Type() string
 	Info() string
 	Args(args map[string]string) error
@@ -94,84 +91,103 @@ func initWorkerAnt(ant WorkerAnt, workerConfig *config.WorkerConfig) error {
 	return nil
 }
 
-type Runner struct {
-	stdout map[string]string
-}
-
-func (r *Runner) RunWorkers(ants []Ant) {
-	var wg sync.WaitGroup
-	for i := 0; i < len(ants); i++ {
-		wg.Add(1)
-		go func(ant Ant) {
-			defer wg.Done()
-			err := runPluginStreaming(ant.Name)
-			if err != nil {
-				panic(err)
-			}
-		}(ants[i])
-	}
-	wg.Wait()
-}
-
-func runPluginStreaming(antName string) error {
-	cmd := exec.Command(os.Args[0], "run", antName)
-
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	go streamOutput(stdoutPipe, antName)
-	go streamOutput(stderrPipe, antName+"[ERR]")
-
-	return cmd.Wait()
-}
-
-func streamOutput(r io.ReadCloser, prefix string) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		fmt.Printf("[%s] %s\n", prefix, scanner.Text())
-	}
-}
-
 type Request struct {
 	Action string `json:"action"`
 	Name   string `json:"name"`
 }
 
-func RunAllWorkers() error {
+type Runner struct {
+	workersPath   string
+	workersConfig *config.WorkersConfig
+	wg            sync.WaitGroup
+}
+
+func NewRunner(workersPath string) Runner {
+	return Runner{
+		workersPath: workersPath,
+	}
+}
+
+func (r *Runner) Init() error {
 	w, err := config.ParseWorkers("workers.yaml")
 	if err != nil {
-		return nil
+		return err
 	}
+	r.workersConfig = w
+	return nil
+}
 
-	var wg sync.WaitGroup
-	for i := 0; i < len(w.Workers); i++ {
-		wg.Add(1)
+func (r *Runner) Wait() {
+	r.wg.Wait()
+}
+
+func (r *Runner) RunAllWorkers() error {
+	workersConfig := r.workersConfig.Workers
+	for i := 0; i < len(workersConfig); i++ {
+		r.wg.Add(1)
 		go func(name string) {
-			conn, err := net.Dial("unix", "/tmp/anthill.sock")
+			defer r.wg.Done()
+			conn, err := connectToOrchestrator()
 			if err != nil {
-				log.Fatal("failed to connect to orchestrator:", err)
+				log.Fatal(err)
 			}
 			defer conn.Close()
 
-			defer wg.Done()
-			req := Request{Action: "run", Name: w.Workers[i].Name}
+			req := Request{Action: "run", Name: workersConfig[i].Name}
 			enc := json.NewEncoder(conn)
 			err = enc.Encode(req)
 			if err != nil {
 				log.Fatal("failed to send request:", err)
 			}
-		}(w.Workers[i].Name)
+		}(workersConfig[i].Name)
 	}
-	wg.Wait()
 	return nil
+}
+
+func (r *Runner) RunWorker(name string) {
+	for i := 0; i < len(r.workersConfig.Workers); i++ {
+		workerConfig := r.workersConfig.Workers[i]
+		if workerConfig.Name == name {
+			r.wg.Add(1)
+			go func() {
+				defer r.wg.Done()
+				conn, err := connectToOrchestrator()
+				if err != nil {
+					log.Fatal(err)
+				}
+				defer conn.Close()
+
+				req := Request{Action: "run", Name: name}
+				enc := json.NewEncoder(conn)
+				err = enc.Encode(req)
+				if err != nil {
+					log.Fatal("failed to send request:", err)
+				}
+			}()
+		}
+	}
+}
+
+func StopWorker(name string) error {
+	conn, err := connectToOrchestrator()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	req := Request{Action: "stop", Name: name}
+	enc := json.NewEncoder(conn)
+	err = enc.Encode(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %s", err)
+	}
+	return nil
+}
+
+func connectToOrchestrator() (net.Conn, error) {
+	conn, err := net.Dial("unix", "/tmp/anthill.sock")
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to orchestrator: %s", err)
+	}
+	return conn, nil
 }

@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"sync"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 	"github.com/uwine4850/anthill/pkg/config"
@@ -61,21 +63,22 @@ func (o *Orchestrator) Listen() error {
 
 	fmt.Println("Online.")
 
+	runningWorkers := sync.Map{}
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
-
 		go func() {
-			if err := o.handleConnection(conn); err != nil {
+			if err := o.handleConnection(conn, &runningWorkers); err != nil {
 				log.Fatalf("fatal error: %s", err)
 			}
 		}()
 	}
 }
 
-func (o *Orchestrator) handleConnection(conn net.Conn) error {
+func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map) error {
 	defer conn.Close()
 
 	var req worker.Request
@@ -83,15 +86,40 @@ func (o *Orchestrator) handleConnection(conn net.Conn) error {
 	if err := decoder.Decode(&req); err != nil {
 		return err
 	}
+	switch req.Action {
+	case "run":
+		runWorker(o.currentAnts, runningWorkers, req.Name)
+	case "stop":
+		if err := cancelWorker(runningWorkers, req.Name); err != nil {
+			return nil
+		}
+	default:
+		return fmt.Errorf("undefined action <%s>", req.Action)
+	}
+	return nil
+}
 
-	if req.Action == "run" {
-		for i := 0; i < len(o.currentAnts); i++ {
-			if o.currentAnts[i].Name == req.Name {
-				if err := o.currentAnts[i].Worker.Run(); err != nil {
-					return err
+func runWorker(ants []worker.Ant, runningWorkers *sync.Map, name string) {
+	for i := 0; i < len(ants); i++ {
+		if ants[i].Name == name {
+			ctx, cancel := context.WithCancel(context.Background())
+			runningWorkers.Store(name, cancel)
+			go func(ant worker.Ant, ctx context.Context) {
+				if err := ant.Worker.Run(ctx); err != nil {
+					log.Printf("worker error: %v", err)
 				}
-			}
+			}(ants[i], ctx)
 		}
 	}
+}
+
+func cancelWorker(runningWorkers *sync.Map, name string) error {
+	cancelFunc, ok := runningWorkers.Load(name)
+	if !ok {
+		return fmt.Errorf("running worker <%s> not exists", name)
+	}
+	cancel := cancelFunc.(context.CancelFunc)
+	cancel()
+	runningWorkers.Delete(name)
 	return nil
 }
