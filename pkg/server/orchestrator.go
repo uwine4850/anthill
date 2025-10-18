@@ -1,13 +1,15 @@
 package server
 
 import (
-	"context"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"sync"
+	"syscall"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 	"github.com/uwine4850/anthill/pkg/config"
@@ -15,36 +17,33 @@ import (
 )
 
 type Orchestrator struct {
-	currentAnts []worker.Ant
+	currentAnts map[string]worker.PluginAnt
 }
 
 func NewOrchestartor() Orchestrator {
 	return Orchestrator{
-		currentAnts: make([]worker.Ant, 0),
+		currentAnts: make(map[string]worker.PluginAnt, 0),
 	}
 }
 
 func (o *Orchestrator) CollectAnts() error {
-	ants, err := worker.WorkerAntListFromPlugins("plugins.yaml")
+	plugs, err := config.ParsePlugins("plugins.yaml")
 	if err != nil {
 		return err
 	}
-	a, err := worker.TotalWorkerAntList(ants)
+	pluginAnts, err := worker.ExtractPluginAntsFromPlugins(*plugs)
 	if err != nil {
 		return err
 	}
-
-	w, err := config.ParseWorkers("workers.yaml")
+	workersc, err := config.ParseWorkers("workers.yaml")
 	if err != nil {
 		return err
 	}
-
-	wcurrent, err := worker.CurrentAnts(w, a)
+	currentAnts, err := worker.CurrentAnts(workersc, pluginAnts)
 	if err != nil {
 		return err
 	}
-
-	o.currentAnts = wcurrent
+	o.currentAnts = currentAnts
 	return nil
 }
 
@@ -91,7 +90,7 @@ func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map)
 		runWorker(o.currentAnts, runningWorkers, req.Name)
 	case "stop":
 		if err := cancelWorker(runningWorkers, req.Name); err != nil {
-			return nil
+			return err
 		}
 	default:
 		return fmt.Errorf("undefined action <%s>", req.Action)
@@ -99,27 +98,49 @@ func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map)
 	return nil
 }
 
-func runWorker(ants []worker.Ant, runningWorkers *sync.Map, name string) {
-	for i := 0; i < len(ants); i++ {
-		if ants[i].Name == name {
-			ctx, cancel := context.WithCancel(context.Background())
-			runningWorkers.Store(name, cancel)
-			go func(ant worker.Ant, ctx context.Context) {
-				if err := ant.Worker.Run(ctx); err != nil {
-					log.Printf("worker error: %v", err)
-				}
-			}(ants[i], ctx)
-		}
+func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name string) error {
+	pluginAnt, ok := ants[name]
+	if !ok {
+		return fmt.Errorf("cannot run worker <%s>; it does not exists", name)
 	}
+	go func(ant worker.PluginAnt) {
+		cmd := exec.Command("./launcher", ant.Path)
+		cmdStdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Println("Pipe error:", err)
+			return
+		}
+		if err := cmd.Start(); err != nil {
+			log.Println("Start error: ", err)
+			return
+		}
+		runningWorkers.Store(name, cmd)
+
+		scanner := bufio.NewScanner(cmdStdout)
+		for scanner.Scan() {
+			fmt.Println("OUT:", scanner.Text())
+		}
+		if err := scanner.Err(); err != nil {
+			fmt.Println("Scanner error:", err)
+			return
+		}
+		if err := cmd.Wait(); err != nil {
+			fmt.Println("Wait error:", err)
+			return
+		}
+	}(pluginAnt)
+	return nil
 }
 
 func cancelWorker(runningWorkers *sync.Map, name string) error {
-	cancelFunc, ok := runningWorkers.Load(name)
+	_cmd, ok := runningWorkers.Load(name)
 	if !ok {
 		return fmt.Errorf("running worker <%s> not exists", name)
 	}
-	cancel := cancelFunc.(context.CancelFunc)
-	cancel()
+	cmd := _cmd.(*exec.Cmd)
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		return err
+	}
 	runningWorkers.Delete(name)
 	return nil
 }

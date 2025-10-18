@@ -1,8 +1,6 @@
 package main
 
-import (
-	"github.com/uwine4850/anthill/pkg/server"
-)
+import "github.com/uwine4850/anthill/pkg/server"
 
 func main() {
 	o := server.NewOrchestartor()

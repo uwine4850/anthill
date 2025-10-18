@@ -1,22 +1,62 @@
 package worker
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"log"
-	"net"
-	"sync"
 
 	"github.com/uwine4850/anthill/pkg/config"
 	"github.com/uwine4850/anthill/pkg/plug"
 )
 
+type PluginAnt struct {
+	Path      string
+	WorkerAnt WorkerAnt
+}
+
+func ExtractPluginAntsFromPlugins(pluginsConfig config.PluginsConfig) (map[string]PluginAnt, error) {
+	builtinList, err := plug.BuiltinList()
+	if err != nil {
+		return nil, err
+	}
+	pluginsList := append(pluginsConfig.Plugins, builtinList...)
+
+	pluginAnts := make(map[string]PluginAnt, len(pluginsList))
+	for i := 0; i < len(pluginsList); i++ {
+		pluginPath := pluginsList[i]
+		workerAnt, err := WorkerAntFromPlugin(pluginPath)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := pluginAnts[workerAnt.Type()]; !ok {
+			pluginAnts[workerAnt.Type()] = PluginAnt{
+				Path:      pluginPath,
+				WorkerAnt: workerAnt,
+			}
+		} else {
+			return nil, fmt.Errorf("WorkerAnt type %s already exists", workerAnt.Type())
+		}
+	}
+	return pluginAnts, nil
+}
+
+func CurrentAnts(workersConfig *config.WorkersConfig, allWorkerAnts map[string]PluginAnt) (map[string]PluginAnt, error) {
+	currentAnts := map[string]PluginAnt{}
+	for i := 0; i < len(workersConfig.Workers); i++ {
+		workerConfig := workersConfig.Workers[i]
+		if workerAnt, ok := allWorkerAnts[workerConfig.Type]; ok {
+			currentAnts[workerConfig.Name] = workerAnt
+		} else {
+			return nil, fmt.Errorf("WorkerAnt for type %s not found", workerConfig.Type)
+		}
+	}
+	return currentAnts, nil
+}
+
 type WorkerAnt interface {
-	Run(ctx context.Context) error
+	Run() error
+	Stop() error
 	Type() string
 	Info() string
-	Args(args map[string]string) error
+	Args(args ...any) error
 }
 
 type Ant struct {
@@ -32,7 +72,7 @@ func WorkerAntListFromPlugins(path string) (map[string]WorkerAnt, error) {
 	}
 	ants := make(map[string]WorkerAnt, len(pluginList.Plugins))
 	for i := 0; i < len(pluginList.Plugins); i++ {
-		workerAnt, err := workerAntFromPlugin(pluginList.Plugins[i])
+		workerAnt, err := WorkerAntFromPlugin(pluginList.Plugins[i])
 		if err != nil {
 			return nil, err
 		}
@@ -44,150 +84,11 @@ func WorkerAntListFromPlugins(path string) (map[string]WorkerAnt, error) {
 	return ants, nil
 }
 
-func workerAntFromPlugin(path string) (WorkerAnt, error) {
+func WorkerAntFromPlugin(path string) (WorkerAnt, error) {
 	plugin, err := plug.OpenPlugin(path)
 	if err != nil {
 		return nil, err
 	}
 	workerAnt := (*plugin).(WorkerAnt)
 	return workerAnt, nil
-}
-
-func TotalWorkerAntList(pluginWorkerAnts map[string]WorkerAnt) (map[string]WorkerAnt, error) {
-	for i := 0; i < len(builtinWorkerAnts); i++ {
-		workerAnt := builtinWorkerAnts[i]
-		if _, ok := pluginWorkerAnts[workerAnt.Type()]; ok {
-			return nil, fmt.Errorf("WorkerAnt type <%s> already exists", workerAnt.Type())
-		}
-		pluginWorkerAnts[workerAnt.Type()] = workerAnt
-	}
-	return pluginWorkerAnts, nil
-}
-
-func CurrentAnts(workersConfig *config.WorkersConfig, allWorkers map[string]WorkerAnt) ([]Ant, error) {
-	currentAnts := []Ant{}
-	for i := 0; i < len(workersConfig.Workers); i++ {
-		workerConfig := workersConfig.Workers[i]
-		if workerAnt, ok := allWorkers[workerConfig.Type]; ok {
-			if err := initWorkerAnt(workerAnt, &workerConfig); err != nil {
-				return nil, err
-			}
-			currentAnts = append(currentAnts, Ant{
-				Name:   workerConfig.Name,
-				Reload: workerConfig.Reload,
-				Worker: workerAnt,
-			})
-		} else {
-			return nil, fmt.Errorf("WorkerAnt for type %s not found", workerConfig.Type)
-		}
-	}
-	return currentAnts, nil
-}
-
-func initWorkerAnt(ant WorkerAnt, workerConfig *config.WorkerConfig) error {
-	if err := ant.Args(workerConfig.Args); err != nil {
-		return err
-	}
-	return nil
-}
-
-type Request struct {
-	Action string `json:"action"`
-	Name   string `json:"name"`
-}
-
-type Runner struct {
-	workersPath   string
-	workersConfig *config.WorkersConfig
-	wg            sync.WaitGroup
-}
-
-func NewRunner(workersPath string) Runner {
-	return Runner{
-		workersPath: workersPath,
-	}
-}
-
-func (r *Runner) Init() error {
-	w, err := config.ParseWorkers("workers.yaml")
-	if err != nil {
-		return err
-	}
-	r.workersConfig = w
-	return nil
-}
-
-func (r *Runner) Wait() {
-	r.wg.Wait()
-}
-
-func (r *Runner) RunAllWorkers() error {
-	workersConfig := r.workersConfig.Workers
-	for i := 0; i < len(workersConfig); i++ {
-		r.wg.Add(1)
-		go func(name string) {
-			defer r.wg.Done()
-			conn, err := connectToOrchestrator()
-			if err != nil {
-				log.Fatal(err)
-			}
-			defer conn.Close()
-
-			req := Request{Action: "run", Name: workersConfig[i].Name}
-			enc := json.NewEncoder(conn)
-			err = enc.Encode(req)
-			if err != nil {
-				log.Fatal("failed to send request:", err)
-			}
-		}(workersConfig[i].Name)
-	}
-	return nil
-}
-
-func (r *Runner) RunWorker(name string) {
-	for i := 0; i < len(r.workersConfig.Workers); i++ {
-		workerConfig := r.workersConfig.Workers[i]
-		if workerConfig.Name == name {
-			r.wg.Add(1)
-			go func() {
-				defer r.wg.Done()
-				conn, err := connectToOrchestrator()
-				if err != nil {
-					log.Fatal(err)
-				}
-				defer conn.Close()
-
-				req := Request{Action: "run", Name: name}
-				enc := json.NewEncoder(conn)
-				err = enc.Encode(req)
-				if err != nil {
-					log.Fatal("failed to send request:", err)
-				}
-			}()
-		}
-	}
-}
-
-func StopWorker(name string) error {
-	conn, err := connectToOrchestrator()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	req := Request{Action: "stop", Name: name}
-	enc := json.NewEncoder(conn)
-	err = enc.Encode(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %s", err)
-	}
-	return nil
-}
-
-func connectToOrchestrator() (net.Conn, error) {
-	conn, err := net.Dial("unix", "/tmp/anthill.sock")
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to orchestrator: %s", err)
-	}
-	return conn, nil
 }
