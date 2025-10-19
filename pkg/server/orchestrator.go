@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -107,7 +108,12 @@ func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name 
 		cmd := exec.Command("./launcher", append([]string{ant.Path}, ant.Args...)...)
 		cmdStdout, err := cmd.StdoutPipe()
 		if err != nil {
-			log.Println("Pipe error:", err)
+			log.Println("Stdout pipe error:", err)
+			return
+		}
+		cmdStderr, err := cmd.StderrPipe()
+		if err != nil {
+			log.Println("Stderr pipe error:", err)
 			return
 		}
 		if err := cmd.Start(); err != nil {
@@ -116,20 +122,35 @@ func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name 
 		}
 		runningWorkers.Store(name, cmd)
 
-		scanner := bufio.NewScanner(cmdStdout)
-		for scanner.Scan() {
-			fmt.Println("OUT:", scanner.Text())
-		}
-		if err := scanner.Err(); err != nil {
-			fmt.Println("Scanner error:", err)
-			return
-		}
+		go readStdout(cmdStdout)
+		go readStderr(cmdStderr)
+
 		if err := cmd.Wait(); err != nil {
-			fmt.Println("Wait error:", err)
+			log.Println(name, "wait error:", err)
 			return
 		}
 	}(pluginAnt)
 	return nil
+}
+
+func readStdout(stdout io.ReadCloser) {
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		fmt.Println("OUT:", scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		log.Println("Stdout read error:", err)
+	}
+}
+
+func readStderr(stdout io.ReadCloser) {
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		fmt.Println("ERR:", scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		log.Println("Stderr read error:", err)
+	}
 }
 
 func cancelWorker(runningWorkers *sync.Map, name string) error {
