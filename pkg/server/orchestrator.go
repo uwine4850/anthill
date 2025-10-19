@@ -1,10 +1,8 @@
 package server
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -122,8 +120,13 @@ func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name 
 		}
 		runningWorkers.Store(name, cmd)
 
-		go readStdout(cmdStdout)
-		go readStderr(cmdStderr)
+		antWorkerReader := NewAntWorkerReader(name)
+		go antWorkerReader.ReadText(cmdStdout)
+		go antWorkerReader.ReadText(cmdStderr)
+		if err := antWorkerReader.Stream(); err != nil {
+			log.Println("stream error: ", err)
+			return
+		}
 
 		if err := cmd.Wait(); err != nil {
 			log.Println(name, "wait error:", err)
@@ -131,26 +134,6 @@ func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name 
 		}
 	}(pluginAnt)
 	return nil
-}
-
-func readStdout(stdout io.ReadCloser) {
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		fmt.Println("OUT:", scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		log.Println("Stdout read error:", err)
-	}
-}
-
-func readStderr(stdout io.ReadCloser) {
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		fmt.Println("ERR:", scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		log.Println("Stderr read error:", err)
-	}
 }
 
 func cancelWorker(runningWorkers *sync.Map, name string) error {
