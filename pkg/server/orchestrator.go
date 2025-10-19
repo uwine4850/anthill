@@ -104,7 +104,7 @@ func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name 
 		return fmt.Errorf("cannot run worker <%s>; it does not exists", name)
 	}
 	go func(ant worker.PluginAnt) {
-		cmd := exec.Command("./launcher", ant.Path)
+		cmd := exec.Command("./launcher", append([]string{ant.Path}, ant.Args...)...)
 		cmdStdout, err := cmd.StdoutPipe()
 		if err != nil {
 			log.Println("Pipe error:", err)

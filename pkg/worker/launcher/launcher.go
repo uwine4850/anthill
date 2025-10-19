@@ -3,28 +3,33 @@ package main
 import (
 	"os"
 	"os/signal"
-	"reflect"
 	"syscall"
 
-	"github.com/uwine4850/anthill/pkg/plug"
+	"github.com/uwine4850/anthill/pkg/worker"
 )
 
 func main() {
-	plugin, err := plug.OpenPlugin(os.Args[1])
+	workerAnt, err := worker.WorkerAntFromPlugin(os.Args[1])
 	if err != nil {
 		panic(err)
 	}
-	v := reflect.ValueOf(*plugin)
-	runMethod := v.MethodByName("Run")
-	stopMethod := v.MethodByName("Stop")
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM)
 
 	go func() {
 		<-sigs
-		stopMethod.Call(nil)
+		if err := workerAnt.Stop(); err != nil {
+			panic(err)
+		}
 		os.Exit(0)
 	}()
-	runMethod.Call(nil)
+	if len(os.Args) > 2 {
+		if err := workerAnt.Args(os.Args[2:]...); err != nil {
+			panic(err)
+		}
+	}
+	if err := workerAnt.Run(); err != nil {
+		panic(err)
+	}
 }

@@ -32,7 +32,7 @@ func (c *Command) Info() string {
 	return "Command worker"
 }
 
-func (c *Command) Args(args ...any) error {
+func (c *Command) Args(args ...string) error {
 	fmt.Println("Cmd args:", args)
 	return nil
 }

@@ -11,7 +11,7 @@ type WorkerConfig struct {
 	Name   string
 	Reload bool
 	Type   string
-	Args   []any
+	Args   []string
 }
 
 type WorkersConfig struct {

@@ -9,6 +9,7 @@ import (
 
 type PluginAnt struct {
 	Path      string
+	Args      []string
 	WorkerAnt WorkerAnt
 }
 
@@ -38,12 +39,13 @@ func ExtractPluginAntsFromPlugins(pluginsConfig config.PluginsConfig) (map[strin
 	return pluginAnts, nil
 }
 
-func CurrentAnts(workersConfig *config.WorkersConfig, allWorkerAnts map[string]PluginAnt) (map[string]PluginAnt, error) {
+func CurrentAnts(workersConfig *config.WorkersConfig, allPluginAnts map[string]PluginAnt) (map[string]PluginAnt, error) {
 	currentAnts := map[string]PluginAnt{}
 	for i := 0; i < len(workersConfig.Workers); i++ {
 		workerConfig := workersConfig.Workers[i]
-		if workerAnt, ok := allWorkerAnts[workerConfig.Type]; ok {
-			currentAnts[workerConfig.Name] = workerAnt
+		if pluginAnt, ok := allPluginAnts[workerConfig.Type]; ok {
+			pluginAnt.Args = workerConfig.Args
+			currentAnts[workerConfig.Name] = pluginAnt
 		} else {
 			return nil, fmt.Errorf("WorkerAnt for type %s not found", workerConfig.Type)
 		}
@@ -56,7 +58,7 @@ type WorkerAnt interface {
 	Stop() error
 	Type() string
 	Info() string
-	Args(args ...any) error
+	Args(args ...string) error
 }
 
 type Ant struct {
