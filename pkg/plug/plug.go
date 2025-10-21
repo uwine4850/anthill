@@ -3,6 +3,8 @@ package plug
 import (
 	"path/filepath"
 	"plugin"
+
+	"github.com/uwine4850/anthill/pkg/config"
 )
 
 func OpenPlugin(pluginPath string) (*plugin.Symbol, error) {
@@ -10,7 +12,7 @@ func OpenPlugin(pluginPath string) (*plugin.Symbol, error) {
 	if err != nil {
 		return nil, err
 	}
-	sym, err := p.Lookup("Plugin")
+	sym, err := p.Lookup(config.EXPORT_PLUGIN_NAME)
 	if err != nil {
 		return nil, err
 	}

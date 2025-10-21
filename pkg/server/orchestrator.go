@@ -53,19 +53,18 @@ func (o *Orchestrator) CollectAnts() error {
 }
 
 func (o *Orchestrator) Listen() error {
-	socketPath := "/tmp/anthill.sock"
-	if err := pathutils.Exists(socketPath); err == nil {
-		if err := os.Remove(socketPath); err != nil {
+	if err := pathutils.Exists(config.ANTHILL_SOCKET_PATH); err == nil {
+		if err := os.Remove(config.ANTHILL_SOCKET_PATH); err != nil {
 			return err
 		}
 	}
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := net.Listen("unix", config.ANTHILL_SOCKET_PATH)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
 
-	fmt.Println("Online.")
+	fmt.Println("Orchestrator online.")
 
 	runningWorkers := sync.Map{}
 

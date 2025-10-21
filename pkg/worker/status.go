@@ -9,6 +9,12 @@ import (
 	"github.com/uwine4850/anthill/pkg/config"
 )
 
+type WorkerStatus struct {
+	Name   string
+	Active bool
+	UpDate time.Time
+}
+
 type StatusResponse struct {
 	Name   string
 	Active bool

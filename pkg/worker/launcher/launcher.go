@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,7 +12,7 @@ import (
 func main() {
 	workerAnt, err := worker.WorkerAntFromPlugin(os.Args[1])
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	sigs := make(chan os.Signal, 1)
@@ -20,16 +21,16 @@ func main() {
 	go func() {
 		<-sigs
 		if err := workerAnt.Stop(); err != nil {
-			panic(err)
+			log.Fatalln(err)
 		}
 		os.Exit(0)
 	}()
 	if len(os.Args) > 2 {
 		if err := workerAnt.Args(os.Args[2:]...); err != nil {
-			panic(err)
+			log.Fatalln(err)
 		}
 	}
 	if err := workerAnt.Run(); err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
 }

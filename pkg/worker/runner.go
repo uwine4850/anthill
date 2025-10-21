@@ -104,7 +104,7 @@ func StopWorker(name string) error {
 }
 
 func connectToOrchestrator() (net.Conn, error) {
-	conn, err := net.Dial("unix", "/tmp/anthill.sock")
+	conn, err := net.Dial("unix", config.ANTHILL_SOCKET_PATH)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to orchestrator: %s", err)
 	}
