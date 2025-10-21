@@ -2,10 +2,17 @@ package worker
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/uwine4850/anthill/pkg/config"
 	"github.com/uwine4850/anthill/pkg/plug"
 )
+
+type WorkerStatus struct {
+	Name   string
+	Active bool
+	UpDate time.Time
+}
 
 type PluginAnt struct {
 	Path      string
@@ -59,12 +66,6 @@ type WorkerAnt interface {
 	Type() string
 	Info() string
 	Args(args ...string) error
-}
-
-type Ant struct {
-	Name   string
-	Reload bool
-	Worker WorkerAnt
 }
 
 func WorkerAntListFromPlugins(path string) (map[string]WorkerAnt, error) {

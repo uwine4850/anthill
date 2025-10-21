@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"time"
-
-	_ "github.com/uwine4850/anthill/pkg/worker"
 )
 
 type Command struct{}

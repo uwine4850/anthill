@@ -16,12 +16,15 @@ import (
 )
 
 type Orchestrator struct {
-	currentAnts map[string]worker.PluginAnt
+	currentAnts   map[string]worker.PluginAnt
+	workersConfig *config.WorkersConfig
+	status        *worker.Status
 }
 
 func NewOrchestartor() Orchestrator {
 	return Orchestrator{
 		currentAnts: make(map[string]worker.PluginAnt, 0),
+		status:      worker.NewStatus(),
 	}
 }
 
@@ -38,6 +41,9 @@ func (o *Orchestrator) CollectAnts() error {
 	if err != nil {
 		return err
 	}
+	o.workersConfig = workersc
+	o.status.Init(workersc)
+
 	currentAnts, err := worker.CurrentAnts(workersc, pluginAnts)
 	if err != nil {
 		return err
@@ -86,9 +92,21 @@ func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map)
 	}
 	switch req.Action {
 	case "run":
-		runWorker(o.currentAnts, runningWorkers, req.Name)
+		if err := runWorker(o.currentAnts, runningWorkers, req.Name); err != nil {
+			return err
+		}
+		if err := o.status.SetRunning(req.Name); err != nil {
+			return err
+		}
 	case "stop":
 		if err := cancelWorker(runningWorkers, req.Name); err != nil {
+			return err
+		}
+		if err := o.status.SetStopped(req.Name); err != nil {
+			return err
+		}
+	case "status":
+		if err := o.status.SendResponse(conn); err != nil {
 			return err
 		}
 	default:
