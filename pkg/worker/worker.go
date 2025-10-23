@@ -7,8 +7,17 @@ import (
 	"github.com/uwine4850/anthill/pkg/plug"
 )
 
+type WorkerAnt interface {
+	Run() error
+	Stop() error
+	Type() string
+	Info() string
+	Args(args ...string) error
+}
+
 type PluginAnt struct {
 	Path      string
+	Reload    bool
 	Args      []string
 	WorkerAnt WorkerAnt
 }
@@ -45,20 +54,13 @@ func CurrentAnts(workersConfig *config.WorkersConfig, allPluginAnts map[string]P
 		workerConfig := workersConfig.Workers[i]
 		if pluginAnt, ok := allPluginAnts[workerConfig.Type]; ok {
 			pluginAnt.Args = workerConfig.Args
+			pluginAnt.Reload = workerConfig.Reload
 			currentAnts[workerConfig.Name] = pluginAnt
 		} else {
 			return nil, fmt.Errorf("WorkerAnt for type %s not found", workerConfig.Type)
 		}
 	}
 	return currentAnts, nil
-}
-
-type WorkerAnt interface {
-	Run() error
-	Stop() error
-	Type() string
-	Info() string
-	Args(args ...string) error
 }
 
 func WorkerAntListFromPlugins(path string) (map[string]WorkerAnt, error) {

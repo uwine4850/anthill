@@ -12,6 +12,12 @@ import (
 	"github.com/uwine4850/anthill/internal/pathutils"
 )
 
+type Streamer interface {
+	ReadText(reader io.Reader)
+	Stream() error
+	New(antWorkerName string) Streamer
+}
+
 const MAX_HISTORY_LEN = 300
 
 type AntWorkerStreamer struct {
@@ -22,7 +28,7 @@ type AntWorkerStreamer struct {
 	mu      sync.Mutex
 }
 
-func NewAntWorkerReader(antWorkerName string) *AntWorkerStreamer {
+func (s *AntWorkerStreamer) New(antWorkerName string) Streamer {
 	return &AntWorkerStreamer{
 		Name:    antWorkerName,
 		history: make([]string, 0, MAX_HISTORY_LEN),

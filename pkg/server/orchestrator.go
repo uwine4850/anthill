@@ -6,9 +6,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
-	"sync"
-	"syscall"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 	"github.com/uwine4850/anthill/pkg/config"
@@ -16,15 +13,17 @@ import (
 )
 
 type Orchestrator struct {
-	currentAnts   map[string]worker.PluginAnt
-	workersConfig *config.WorkersConfig
-	status        *worker.Status
+	currentAnts      map[string]worker.PluginAnt
+	workersConfig    *config.WorkersConfig
+	status           *worker.Status
+	antWorkerProcess AWorkerProcess
 }
 
 func NewOrchestartor() Orchestrator {
 	return Orchestrator{
-		currentAnts: make(map[string]worker.PluginAnt, 0),
-		status:      worker.NewStatus(),
+		currentAnts:      make(map[string]worker.PluginAnt, 0),
+		status:           worker.NewStatus(),
+		antWorkerProcess: &AntWorkerProcess{},
 	}
 }
 
@@ -66,22 +65,20 @@ func (o *Orchestrator) Listen() error {
 
 	fmt.Println("Orchestrator online.")
 
-	runningWorkers := sync.Map{}
-
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
 			continue
 		}
 		go func() {
-			if err := o.handleConnection(conn, &runningWorkers); err != nil {
+			if err := o.handleConnection(conn); err != nil {
 				log.Fatalf("fatal error: %s", err)
 			}
 		}()
 	}
 }
 
-func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map) error {
+func (o *Orchestrator) handleConnection(conn net.Conn) error {
 	defer conn.Close()
 
 	var req worker.Request
@@ -89,16 +86,19 @@ func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map)
 	if err := decoder.Decode(&req); err != nil {
 		return err
 	}
+
+	p := o.antWorkerProcess.New(&o.currentAnts, req.Name)
+
 	switch req.Action {
 	case "run":
-		if err := runWorker(o.currentAnts, runningWorkers, req.Name); err != nil {
+		if err := p.Run(); err != nil {
 			return err
 		}
 		if err := o.status.SetRunning(req.Name); err != nil {
 			return err
 		}
 	case "stop":
-		if err := cancelWorker(runningWorkers, req.Name); err != nil {
+		if err := p.Stop(); err != nil {
 			return err
 		}
 		if err := o.status.SetStopped(req.Name); err != nil {
@@ -111,57 +111,5 @@ func (o *Orchestrator) handleConnection(conn net.Conn, runningWorkers *sync.Map)
 	default:
 		return fmt.Errorf("undefined action <%s>", req.Action)
 	}
-	return nil
-}
-
-func runWorker(ants map[string]worker.PluginAnt, runningWorkers *sync.Map, name string) error {
-	pluginAnt, ok := ants[name]
-	if !ok {
-		return fmt.Errorf("cannot run worker <%s>; it does not exists", name)
-	}
-	go func(ant worker.PluginAnt) {
-		cmd := exec.Command("./launcher", append([]string{ant.Path}, ant.Args...)...)
-		cmdStdout, err := cmd.StdoutPipe()
-		if err != nil {
-			log.Println("Stdout pipe error:", err)
-			return
-		}
-		cmdStderr, err := cmd.StderrPipe()
-		if err != nil {
-			log.Println("Stderr pipe error:", err)
-			return
-		}
-		if err := cmd.Start(); err != nil {
-			log.Println("Start error: ", err)
-			return
-		}
-		runningWorkers.Store(name, cmd)
-
-		antWorkerReader := NewAntWorkerReader(name)
-		go antWorkerReader.ReadText(cmdStdout)
-		go antWorkerReader.ReadText(cmdStderr)
-		if err := antWorkerReader.Stream(); err != nil {
-			log.Println("stream error: ", err)
-			return
-		}
-
-		if err := cmd.Wait(); err != nil {
-			log.Println(name, "wait error:", err)
-			return
-		}
-	}(pluginAnt)
-	return nil
-}
-
-func cancelWorker(runningWorkers *sync.Map, name string) error {
-	_cmd, ok := runningWorkers.Load(name)
-	if !ok {
-		return fmt.Errorf("running worker <%s> not exists", name)
-	}
-	cmd := _cmd.(*exec.Cmd)
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		return err
-	}
-	runningWorkers.Delete(name)
 	return nil
 }
