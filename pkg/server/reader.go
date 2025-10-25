@@ -8,27 +8,31 @@ import (
 	"net"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 )
 
 type Streamer interface {
+	io.Closer
 	ReadText(reader io.Reader)
 	Stream() error
-	New(antWorkerName string) Streamer
 }
 
 const MAX_HISTORY_LEN = 300
 
 type AntWorkerStreamer struct {
-	Name    string
-	logs    chan string
-	history []string
-	socket  string
-	mu      sync.Mutex
+	Name     string
+	logs     chan string
+	history  []string
+	socket   string
+	mu       sync.Mutex
+	listener net.Listener
+	isClose  atomic.Bool
+	wg       sync.WaitGroup
 }
 
-func (s *AntWorkerStreamer) New(antWorkerName string) Streamer {
+func NewAntWorkerStreamer(antWorkerName string) Streamer {
 	return &AntWorkerStreamer{
 		Name:    antWorkerName,
 		history: make([]string, 0, MAX_HISTORY_LEN),
@@ -37,9 +41,17 @@ func (s *AntWorkerStreamer) New(antWorkerName string) Streamer {
 	}
 }
 
+func (s *AntWorkerStreamer) Close() error {
+	s.isClose.Store(true)
+	s.wg.Wait()
+	close(s.logs)
+	return s.listener.Close()
+}
+
 func (s *AntWorkerStreamer) ReadText(reader io.Reader) {
 	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
+	s.wg.Add(1)
+	for scanner.Scan() && !s.isClose.Load() {
 		text := scanner.Text()
 		s.mu.Lock()
 		if len(s.history) > MAX_HISTORY_LEN {
@@ -50,8 +62,8 @@ func (s *AntWorkerStreamer) ReadText(reader io.Reader) {
 		}
 		s.mu.Unlock()
 		s.logs <- text
+		s.wg.Done()
 	}
-	close(s.logs)
 }
 
 func (s *AntWorkerStreamer) Stream() error {
@@ -65,10 +77,11 @@ func (s *AntWorkerStreamer) Stream() error {
 	if err != nil {
 		return err
 	}
+	s.listener = listener
 
 	go func() {
 		defer listener.Close()
-		for {
+		for !s.isClose.Load() {
 			conn, err := listener.Accept()
 			if err != nil {
 				log.Println("socket accept error:", err)

@@ -14,6 +14,7 @@ import (
 type AWorkerProcess interface {
 	Run() error
 	Stop() error
+	OnDone(fn func())
 	New(ants *map[string]worker.PluginAnt, name string) AWorkerProcess
 }
 
@@ -22,6 +23,7 @@ type AntWorkerProcess struct {
 	runningWorkers *sync.Map
 	name           string
 	streamer       Streamer
+	onDoneFn       func()
 }
 
 func (p *AntWorkerProcess) New(ants *map[string]worker.PluginAnt, name string) AWorkerProcess {
@@ -29,6 +31,7 @@ func (p *AntWorkerProcess) New(ants *map[string]worker.PluginAnt, name string) A
 		ants:           ants,
 		runningWorkers: &sync.Map{},
 		name:           name,
+		streamer:       NewAntWorkerStreamer(name),
 	}
 }
 
@@ -38,6 +41,9 @@ func (p *AntWorkerProcess) Run() error {
 		return fmt.Errorf("cannot run worker <%s>; it does not exists", p.name)
 	}
 	go func(ant worker.PluginAnt) {
+		defer p.streamer.Close()
+		defer p.onDoneFn()
+
 		cmd, stdout, stderr, err := p.initLauncher(&ant)
 		if err != nil {
 			log.Println(err)
@@ -78,6 +84,10 @@ func (p *AntWorkerProcess) Stop() error {
 	return nil
 }
 
+func (p *AntWorkerProcess) OnDone(fn func()) {
+	p.onDoneFn = fn
+}
+
 func (p *AntWorkerProcess) initLauncher(pluginAnt *worker.PluginAnt) (cmd *exec.Cmd, stdout io.Reader, stderr io.Reader, err error) {
 	cmd = exec.Command("./launcher", append([]string{pluginAnt.Path}, pluginAnt.Args...)...)
 	cmdStdout, err := cmd.StdoutPipe()
@@ -92,11 +102,10 @@ func (p *AntWorkerProcess) initLauncher(pluginAnt *worker.PluginAnt) (cmd *exec.
 }
 
 func (p *AntWorkerProcess) initAndRunStreamer(stdout io.Reader, stderr io.Reader) error {
-	streamer := p.streamer.New(p.name)
-	go streamer.ReadText(stdout)
-	go streamer.ReadText(stderr)
+	go p.streamer.ReadText(stdout)
+	go p.streamer.ReadText(stderr)
 
-	if err := streamer.Stream(); err != nil {
+	if err := p.streamer.Stream(); err != nil {
 		return fmt.Errorf("stream error: %s", err)
 	}
 	return nil
