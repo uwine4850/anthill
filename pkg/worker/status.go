@@ -13,28 +13,23 @@ type WorkerStatus struct {
 	Name   string
 	Active bool
 	UpDate time.Time
-}
-
-type StatusResponse struct {
-	Name   string
-	Active bool
-	UpDate time.Time
+	Done   bool
 }
 
 type Status struct {
-	workerAntsStatus map[string]StatusResponse
+	workerAntsStatus map[string]WorkerStatus
 }
 
 func NewStatus() *Status {
 	return &Status{
-		workerAntsStatus: make(map[string]StatusResponse),
+		workerAntsStatus: make(map[string]WorkerStatus),
 	}
 }
 
 func (s *Status) Init(workersConfig *config.WorkersConfig) {
 	for i := 0; i < len(workersConfig.Workers); i++ {
 		w := workersConfig.Workers[i]
-		s.workerAntsStatus[w.Name] = StatusResponse{
+		s.workerAntsStatus[w.Name] = WorkerStatus{
 			Name: w.Name,
 		}
 	}
@@ -62,6 +57,28 @@ func (s *Status) SetStopped(name string) error {
 		return fmt.Errorf("worker %s not exists", name)
 	}
 	return nil
+}
+
+func (s *Status) SetDone(name string) error {
+	w, ok := s.workerAntsStatus[name]
+	if ok {
+		w.Active = false
+		w.UpDate = time.Time{}
+		w.Done = true
+		s.workerAntsStatus[name] = w
+	} else {
+		return fmt.Errorf("worker %s not exists", name)
+	}
+	return nil
+}
+
+func (s *Status) Get(name string) (*WorkerStatus, error) {
+	w, ok := s.workerAntsStatus[name]
+	if ok {
+		return &w, nil
+	} else {
+		return nil, fmt.Errorf("worker %s not exists", name)
+	}
 }
 
 func (s *Status) SendResponse(conn net.Conn) error {

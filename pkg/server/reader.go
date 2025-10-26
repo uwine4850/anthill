@@ -50,8 +50,8 @@ func (s *AntWorkerStreamer) Close() error {
 
 func (s *AntWorkerStreamer) ReadText(reader io.Reader) {
 	scanner := bufio.NewScanner(reader)
-	s.wg.Add(1)
 	for scanner.Scan() && !s.isClose.Load() {
+		s.wg.Add(1)
 		text := scanner.Text()
 		s.mu.Lock()
 		if len(s.history) > MAX_HISTORY_LEN {

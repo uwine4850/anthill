@@ -18,6 +18,7 @@ type WorkerAnt interface {
 type PluginAnt struct {
 	Path      string
 	Reload    bool
+	After     []string
 	Args      []string
 	WorkerAnt WorkerAnt
 }
@@ -55,6 +56,7 @@ func CurrentAnts(workersConfig *config.WorkersConfig, allPluginAnts map[string]P
 		if pluginAnt, ok := allPluginAnts[workerConfig.Type]; ok {
 			pluginAnt.Args = workerConfig.Args
 			pluginAnt.Reload = workerConfig.Reload
+			pluginAnt.After = workerConfig.After
 			currentAnts[workerConfig.Name] = pluginAnt
 		} else {
 			return nil, fmt.Errorf("WorkerAnt for type %s not found", workerConfig.Type)
