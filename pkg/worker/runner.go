@@ -83,22 +83,31 @@ func (r *Runner) RunWorker(name string) {
 					log.Fatal("failed to send request:", err)
 				}
 			}()
+		} else {
+			log.Fatalf("worker <%s> not exists\n", name)
 		}
 	}
 }
 
-func StopWorker(name string) error {
+func (r *Runner) StopWorker(name string) error {
 	conn, err := connectToOrchestrator()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	req := Request{Action: "stop", Name: name}
-	enc := json.NewEncoder(conn)
-	err = enc.Encode(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %s", err)
+	for i := 0; i < len(r.workersConfig.Workers); i++ {
+		workerConfig := r.workersConfig.Workers[i]
+		if workerConfig.Name == name {
+			req := Request{Action: "stop", Name: name}
+			enc := json.NewEncoder(conn)
+			err = enc.Encode(req)
+			if err != nil {
+				return fmt.Errorf("failed to send request: %s", err)
+			}
+		} else {
+			return fmt.Errorf("worker <%s> not exists", name)
+		}
 	}
 	return nil
 }

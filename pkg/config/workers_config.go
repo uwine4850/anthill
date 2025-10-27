@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"slices"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 	"gopkg.in/yaml.v3"
@@ -33,5 +35,41 @@ func ParseWorkers(configPath string) (*WorkersConfig, error) {
 	if err := yaml.Unmarshal(f, &workersConfig); err != nil {
 		return nil, err
 	}
+	if err := validateNames(&workersConfig); err != nil {
+		return nil, err
+	}
+	if err := validateAfterList(&workersConfig); err != nil {
+		return nil, err
+	}
 	return &workersConfig, nil
+}
+
+func validateNames(workersConfig *WorkersConfig) error {
+	var workerName string
+	for i := 0; i < len(workersConfig.Workers); i++ {
+		name := workersConfig.Workers[i].Name
+		if workerName == name {
+			return fmt.Errorf("worker <%s> already exists", name)
+		} else {
+			workerName = name
+		}
+	}
+	return nil
+}
+
+func validateAfterList(workersConfig *WorkersConfig) error {
+	workersNames := make([]string, len(workersConfig.Workers))
+	for i := 0; i < len(workersConfig.Workers); i++ {
+		workersNames[i] = workersConfig.Workers[i].Name
+	}
+	for i := 0; i < len(workersConfig.Workers); i++ {
+		for j := 0; j < len(workersConfig.Workers[i].After); j++ {
+			after := workersConfig.Workers[i].After[j]
+			if !slices.Contains(workersNames, after) {
+				return fmt.Errorf("the after field of the worker <%s> contains a non-existent worker <%s>",
+					workersConfig.Workers[i].Name, after)
+			}
+		}
+	}
+	return nil
 }
