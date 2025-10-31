@@ -43,6 +43,13 @@ func (r *Runner) Wait() {
 func (r *Runner) RunAllWorkers() error {
 	workersConfig := r.workersConfig.Workers
 	for i := 0; i < len(workersConfig); i++ {
+		workerStatus, err := CheckStatus(workersConfig[i].Name)
+		if err != nil {
+			return err
+		}
+		if workerStatus.Active {
+			fmt.Printf("worker %s already active\n", workersConfig[i].Name)
+		}
 		r.wg.Add(1)
 		go func(name string) {
 			defer r.wg.Done()
@@ -63,7 +70,14 @@ func (r *Runner) RunAllWorkers() error {
 	return nil
 }
 
-func (r *Runner) RunWorker(name string) {
+func (r *Runner) RunWorker(name string) error {
+	workerStatus, err := CheckStatus(name)
+	if err != nil {
+		return err
+	}
+	if workerStatus.Active {
+		fmt.Printf("worker %s already active\n", name)
+	}
 	for i := 0; i < len(r.workersConfig.Workers); i++ {
 		workerConfig := r.workersConfig.Workers[i]
 		if workerConfig.Name == name {
@@ -87,6 +101,7 @@ func (r *Runner) RunWorker(name string) {
 			log.Fatalf("worker <%s> not exists\n", name)
 		}
 	}
+	return err
 }
 
 func (r *Runner) StopWorker(name string) error {
