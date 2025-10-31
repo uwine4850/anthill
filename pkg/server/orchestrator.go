@@ -128,8 +128,14 @@ func (o *Orchestrator) handleConnection(conn net.Conn, req worker.Request) error
 			return err
 		}
 	case "status":
-		if err := o.status.SendResponse(conn); err != nil {
-			return err
+		if req.Name == "" {
+			if err := o.status.SendResponse(conn); err != nil {
+				return err
+			}
+		} else {
+			if err := o.status.SendWorkerResponse(conn, req.Name); err != nil {
+				return err
+			}
 		}
 	default:
 		return fmt.Errorf("undefined action <%s>", req.Action)

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"time"
@@ -14,6 +15,11 @@ type WorkerStatus struct {
 	Active bool
 	UpDate time.Time
 	Done   bool
+}
+
+type StatusResponse struct {
+	WorkerStatus map[string]WorkerStatus
+	Error        string
 }
 
 type Status struct {
@@ -82,7 +88,7 @@ func (s *Status) Get(name string) (*WorkerStatus, error) {
 }
 
 func (s *Status) SendResponse(conn net.Conn) error {
-	data, err := json.Marshal(s.workerAntsStatus)
+	data, err := json.Marshal(StatusResponse{WorkerStatus: s.workerAntsStatus})
 	if err != nil {
 		return err
 	}
@@ -92,7 +98,26 @@ func (s *Status) SendResponse(conn net.Conn) error {
 	return nil
 }
 
-func CheckStatus() error {
+func (s *Status) SendWorkerResponse(conn net.Conn, workerName string) error {
+	var sendWorkerStatus WorkerStatus
+	var _err string
+	workerStatus, err := s.Get(workerName)
+	if err == nil {
+		sendWorkerStatus = *workerStatus
+	} else {
+		_err = err.Error()
+	}
+	data, err := json.Marshal(StatusResponse{WorkerStatus: map[string]WorkerStatus{workerName: sendWorkerStatus}, Error: _err})
+	if err != nil {
+		return err
+	}
+	if _, err := conn.Write(data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func CheckAllStatus() error {
 	conn, err := connectToOrchestrator()
 	if err != nil {
 		return err
@@ -105,12 +130,12 @@ func CheckStatus() error {
 		return err
 	}
 
-	var resp map[string]WorkerStatus
+	var resp StatusResponse
 	dec := json.NewDecoder(conn)
 	if err := dec.Decode(&resp); err != nil {
 		return err
 	}
-	for _, status := range resp {
+	for _, status := range resp.WorkerStatus {
 		f, err := fmt.Printf("Name: %s | Active: %v, | UpDate: %s", status.Name, status.Active, status.UpDate.Format("2006-01-02 15:04"))
 		if err != nil {
 			return err
@@ -118,4 +143,29 @@ func CheckStatus() error {
 		fmt.Println(f)
 	}
 	return err
+}
+
+func CheckStatus(name string) (*WorkerStatus, error) {
+	conn, err := connectToOrchestrator()
+	if err != nil {
+		return nil, err
+	}
+
+	req := Request{Action: "status", Name: name}
+	enc := json.NewEncoder(conn)
+	err = enc.Encode(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp StatusResponse
+	dec := json.NewDecoder(conn)
+	if err := dec.Decode(&resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != "" {
+		return nil, errors.New(resp.Error)
+	}
+	w := resp.WorkerStatus[name]
+	return &w, nil
 }
