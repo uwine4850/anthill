@@ -6,7 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/uwine4850/anthill/pkg/worker"
+	"github.com/uwine4850/anthill/pkg/infra/worker"
 )
 
 func main() {

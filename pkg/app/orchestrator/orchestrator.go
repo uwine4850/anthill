@@ -1,4 +1,4 @@
-package server
+package orchestrator
 
 import (
 	"encoding/json"
@@ -11,34 +11,43 @@ import (
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 	"github.com/uwine4850/anthill/pkg/config"
-	"github.com/uwine4850/anthill/pkg/worker"
+	"github.com/uwine4850/anthill/pkg/domain"
+	"github.com/uwine4850/anthill/pkg/infra/parsecnf"
+	"github.com/uwine4850/anthill/pkg/infra/process"
+	"github.com/uwine4850/anthill/pkg/infra/socket"
+	"github.com/uwine4850/anthill/pkg/infra/status"
+	"github.com/uwine4850/anthill/pkg/infra/worker"
 )
 
 type AfterWorker struct {
 	Conn      net.Conn
-	PluginAnt worker.PluginAnt
-	Request   worker.Request
+	PluginAnt domain.PluginAnt
+	Request   socket.Request
 }
 
 type Orchestrator struct {
-	currentAnts          map[string]worker.PluginAnt
-	workersConfig        *config.WorkersConfig
-	status               *worker.Status
-	antWorkerProcess     AWorkerProcess
+	currentAnts          map[string]domain.PluginAnt
+	workersConfig        *parsecnf.WorkersConfig
+	status               status.Status
+	antWorkerProcess     domain.AWorkerProcess
 	startAfterWorkerAnts sync.Map
 }
 
 func NewOrchestartor() Orchestrator {
 	return Orchestrator{
-		currentAnts:          make(map[string]worker.PluginAnt, 0),
-		status:               worker.NewStatus(),
-		antWorkerProcess:     &AntWorkerProcess{},
+		currentAnts:          make(map[string]domain.PluginAnt, 0),
+		status:               status.NewStatus(),
+		antWorkerProcess:     &process.AntWorkerProcess{},
 		startAfterWorkerAnts: sync.Map{},
 	}
 }
 
+func (o *Orchestrator) initStatus() {
+	o.status.Init(o.workersConfig)
+}
+
 func (o *Orchestrator) CollectAnts() error {
-	plugs, err := config.ParsePlugins("plugins.yaml")
+	plugs, err := parsecnf.ParsePlugins("plugins.yaml")
 	if err != nil {
 		return err
 	}
@@ -46,14 +55,13 @@ func (o *Orchestrator) CollectAnts() error {
 	if err != nil {
 		return err
 	}
-	workersc, err := config.ParseWorkers("workers.yaml")
+	workersc, err := parsecnf.ParseWorkers("workers.yaml")
 	if err != nil {
 		return err
 	}
 	o.workersConfig = workersc
-	o.status.Init(workersc)
 
-	currentAnts, err := worker.CurrentAnts(workersc, pluginAnts)
+	currentAnts, err := worker.CurrentAnts1(workersc, pluginAnts)
 	if err != nil {
 		return err
 	}
@@ -61,12 +69,21 @@ func (o *Orchestrator) CollectAnts() error {
 	return nil
 }
 
-func (o *Orchestrator) Listen() error {
+func (o *Orchestrator) validateAnthillSocketPath() error {
 	if err := pathutils.Exists(config.ANTHILL_SOCKET_PATH); err == nil {
 		if err := os.Remove(config.ANTHILL_SOCKET_PATH); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (o *Orchestrator) Listen() error {
+	if err := o.validateAnthillSocketPath(); err != nil {
+		return err
+	}
+	o.initStatus()
+
 	listener, err := net.Listen("unix", config.ANTHILL_SOCKET_PATH)
 	if err != nil {
 		return err
@@ -83,7 +100,7 @@ func (o *Orchestrator) Listen() error {
 			continue
 		}
 		go func() {
-			var req worker.Request
+			var req socket.Request
 			decoder := json.NewDecoder(conn)
 			if err := decoder.Decode(&req); err != nil {
 				log.Printf("decode error: %s\n", err)
@@ -103,7 +120,7 @@ func (o *Orchestrator) Listen() error {
 	}
 }
 
-func (o *Orchestrator) handleConnection(conn net.Conn, req worker.Request) error {
+func (o *Orchestrator) handleConnection(conn net.Conn, req socket.Request) error {
 	defer conn.Close()
 	p := o.antWorkerProcess.New(&o.currentAnts, req.Name)
 	p.OnDone(func() {
@@ -129,11 +146,11 @@ func (o *Orchestrator) handleConnection(conn net.Conn, req worker.Request) error
 		}
 	case "status":
 		if req.Name == "" {
-			if err := o.status.SendResponse(conn); err != nil {
+			if err := status.SendResponse(conn, o.status); err != nil {
 				return err
 			}
 		} else {
-			if err := o.status.SendWorkerResponse(conn, req.Name); err != nil {
+			if err := status.SendWorkerResponse(conn, req.Name, o.status); err != nil {
 				return err
 			}
 		}
@@ -150,9 +167,9 @@ func (o *Orchestrator) runDependentWorkers() {
 			afterWorker := value.(AfterWorker)
 			isAllDone := false
 			for i := 0; i < len(afterWorker.PluginAnt.After); i++ {
-				s, err := o.status.Get(afterWorker.PluginAnt.After[i])
-				if err != nil {
-					log.Println(err)
+				s, ok := o.status.Get()[afterWorker.PluginAnt.After[i]]
+				if !ok {
+					log.Println(fmt.Errorf("running worker <%s> not exists", afterWorker.PluginAnt.After[i]))
 				}
 				if s.Done {
 					isAllDone = true

@@ -1,23 +1,18 @@
-package worker
+package runner
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"sync"
 
-	"github.com/uwine4850/anthill/pkg/config"
+	"github.com/uwine4850/anthill/pkg/infra/parsecnf"
+	"github.com/uwine4850/anthill/pkg/infra/socket"
+	"github.com/uwine4850/anthill/pkg/infra/status"
 )
-
-type Request struct {
-	Action string `json:"action"`
-	Name   string `json:"name"`
-}
 
 type Runner struct {
 	workersPath   string
-	workersConfig *config.WorkersConfig
+	workersConfig *parsecnf.WorkersConfig
 	wg            sync.WaitGroup
 }
 
@@ -28,7 +23,7 @@ func NewRunner(workersPath string) Runner {
 }
 
 func (r *Runner) Init() error {
-	w, err := config.ParseWorkers("workers.yaml")
+	w, err := parsecnf.ParseWorkers("workers.yaml")
 	if err != nil {
 		return err
 	}
@@ -43,7 +38,7 @@ func (r *Runner) Wait() {
 func (r *Runner) RunAllWorkers() error {
 	workersConfig := r.workersConfig.Workers
 	for i := 0; i < len(workersConfig); i++ {
-		workerStatus, err := CheckStatus(workersConfig[i].Name)
+		workerStatus, err := status.CheckStatus(workersConfig[i].Name)
 		if err != nil {
 			return err
 		}
@@ -53,16 +48,14 @@ func (r *Runner) RunAllWorkers() error {
 		r.wg.Add(1)
 		go func(name string) {
 			defer r.wg.Done()
-			conn, err := connectToOrchestrator()
+			conn, err := socket.ConnectToOrchestrator()
 			if err != nil {
 				log.Fatal(err)
 			}
 			defer conn.Close()
 
-			req := Request{Action: "run", Name: workersConfig[i].Name}
-			enc := json.NewEncoder(conn)
-			err = enc.Encode(req)
-			if err != nil {
+			req := socket.Request{Action: "run", Name: workersConfig[i].Name}
+			if err := socket.SendRequest(conn, req); err != nil {
 				log.Fatal("failed to send request:", err)
 			}
 		}(workersConfig[i].Name)
@@ -71,7 +64,7 @@ func (r *Runner) RunAllWorkers() error {
 }
 
 func (r *Runner) RunWorker(name string) error {
-	workerStatus, err := CheckStatus(name)
+	workerStatus, err := status.CheckStatus(name)
 	if err != nil {
 		return err
 	}
@@ -84,16 +77,14 @@ func (r *Runner) RunWorker(name string) error {
 			r.wg.Add(1)
 			go func() {
 				defer r.wg.Done()
-				conn, err := connectToOrchestrator()
+				conn, err := socket.ConnectToOrchestrator()
 				if err != nil {
 					log.Fatal(err)
 				}
 				defer conn.Close()
 
-				req := Request{Action: "run", Name: name}
-				enc := json.NewEncoder(conn)
-				err = enc.Encode(req)
-				if err != nil {
+				req := socket.Request{Action: "run", Name: name}
+				if err := socket.SendRequest(conn, req); err != nil {
 					log.Fatal("failed to send request:", err)
 				}
 			}()
@@ -105,7 +96,7 @@ func (r *Runner) RunWorker(name string) error {
 }
 
 func (r *Runner) StopWorker(name string) error {
-	conn, err := connectToOrchestrator()
+	conn, err := socket.ConnectToOrchestrator()
 	if err != nil {
 		return err
 	}
@@ -114,23 +105,13 @@ func (r *Runner) StopWorker(name string) error {
 	for i := 0; i < len(r.workersConfig.Workers); i++ {
 		workerConfig := r.workersConfig.Workers[i]
 		if workerConfig.Name == name {
-			req := Request{Action: "stop", Name: name}
-			enc := json.NewEncoder(conn)
-			err = enc.Encode(req)
-			if err != nil {
-				return fmt.Errorf("failed to send request: %s", err)
+			req := socket.Request{Action: "stop", Name: name}
+			if err := socket.SendRequest(conn, req); err != nil {
+				log.Fatal("failed to send request:", err)
 			}
 		} else {
 			return fmt.Errorf("worker <%s> not exists", name)
 		}
 	}
 	return nil
-}
-
-func connectToOrchestrator() (net.Conn, error) {
-	conn, err := net.Dial("unix", config.ANTHILL_SOCKET_PATH)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to orchestrator: %s", err)
-	}
-	return conn, nil
 }

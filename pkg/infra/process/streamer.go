@@ -1,4 +1,4 @@
-package server
+package process
 
 import (
 	"bufio"
@@ -11,13 +11,8 @@ import (
 	"sync/atomic"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
+	"github.com/uwine4850/anthill/pkg/domain"
 )
-
-type Streamer interface {
-	io.Closer
-	ReadText(reader io.Reader)
-	Stream() error
-}
 
 const MAX_HISTORY_LEN = 300
 
@@ -32,7 +27,7 @@ type AntWorkerStreamer struct {
 	wg       sync.WaitGroup
 }
 
-func NewAntWorkerStreamer(antWorkerName string) Streamer {
+func NewAntWorkerStreamer(antWorkerName string) domain.Streamer {
 	return &AntWorkerStreamer{
 		Name:    antWorkerName,
 		history: make([]string, 0, MAX_HISTORY_LEN),

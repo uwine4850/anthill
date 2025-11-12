@@ -2,3 +2,5 @@ tee
 tee.so
 *.yaml
 w
+_client
+_orc

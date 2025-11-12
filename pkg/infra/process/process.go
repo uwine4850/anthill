@@ -1,4 +1,4 @@
-package server
+package process
 
 import (
 	"fmt"
@@ -8,25 +8,18 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/uwine4850/anthill/pkg/worker"
+	"github.com/uwine4850/anthill/pkg/domain"
 )
 
-type AWorkerProcess interface {
-	Run() error
-	Stop() error
-	OnDone(fn func())
-	New(ants *map[string]worker.PluginAnt, name string) AWorkerProcess
-}
-
 type AntWorkerProcess struct {
-	ants           *map[string]worker.PluginAnt
+	ants           *map[string]domain.PluginAnt
 	runningWorkers *sync.Map
 	name           string
-	streamer       Streamer
+	streamer       domain.Streamer
 	onDoneFn       func()
 }
 
-func (p *AntWorkerProcess) New(ants *map[string]worker.PluginAnt, name string) AWorkerProcess {
+func (p *AntWorkerProcess) New(ants *map[string]domain.PluginAnt, name string) domain.AWorkerProcess {
 	return &AntWorkerProcess{
 		ants:           ants,
 		runningWorkers: &sync.Map{},
@@ -40,7 +33,7 @@ func (p *AntWorkerProcess) Run() error {
 	if !ok {
 		return fmt.Errorf("cannot run worker <%s>; it does not exists", p.name)
 	}
-	go func(ant worker.PluginAnt) {
+	go func(ant domain.PluginAnt) {
 		defer p.streamer.Close()
 		defer p.onDoneFn()
 
@@ -88,7 +81,7 @@ func (p *AntWorkerProcess) OnDone(fn func()) {
 	p.onDoneFn = fn
 }
 
-func (p *AntWorkerProcess) initLauncher(pluginAnt *worker.PluginAnt) (cmd *exec.Cmd, stdout io.Reader, stderr io.Reader, err error) {
+func (p *AntWorkerProcess) initLauncher(pluginAnt *domain.PluginAnt) (cmd *exec.Cmd, stdout io.Reader, stderr io.Reader, err error) {
 	cmd = exec.Command("./launcher", append([]string{pluginAnt.Path}, pluginAnt.Args...)...)
 	cmdStdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -111,7 +104,7 @@ func (p *AntWorkerProcess) initAndRunStreamer(stdout io.Reader, stderr io.Reader
 	return nil
 }
 
-func (p *AntWorkerProcess) killAndReloadOnError(pluginAnt worker.PluginAnt) error {
+func (p *AntWorkerProcess) killAndReloadOnError(pluginAnt domain.PluginAnt) error {
 	if pluginAnt.Reload {
 		if err := p.kill(); err != nil {
 			return err
