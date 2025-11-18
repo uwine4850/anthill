@@ -20,7 +20,7 @@ func OpenPlugin(pluginPath string) (*plugin.Symbol, error) {
 }
 
 var builtinList = []string{
-	"pkg/plug/plugins/builtin_list/cmd.so",
+	"pkg/infra/plug/plugins/builtin_list/cmd.so",
 }
 
 func BuiltinList() ([]string, error) {

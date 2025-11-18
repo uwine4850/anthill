@@ -38,13 +38,13 @@ func ParseWorkers(configPath string) (*WorkersConfig, error) {
 }
 
 func validateNames(workersConfig *WorkersConfig) error {
-	var workerName string
+	seen := make(map[string]struct{}, len(workersConfig.Workers))
 	for i := 0; i < len(workersConfig.Workers); i++ {
 		name := workersConfig.Workers[i].Name
-		if workerName == name {
+		if _, ok := seen[name]; ok {
 			return fmt.Errorf("worker <%s> already exists", name)
 		} else {
-			workerName = name
+			seen[name] = struct{}{}
 		}
 	}
 	return nil
