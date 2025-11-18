@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	dmnsocket "github.com/uwine4850/anthill/pkg/domain/dmn_socket"
 	"github.com/uwine4850/anthill/pkg/infra/parsecnf"
 	"github.com/uwine4850/anthill/pkg/infra/socket"
 	"github.com/uwine4850/anthill/pkg/infra/status"
@@ -54,7 +55,7 @@ func (r *Runner) RunAllWorkers() error {
 			}
 			defer conn.Close()
 
-			req := socket.Request{Action: "run", Name: workersConfig[i].Name}
+			req := dmnsocket.Request{Action: "run", Name: workersConfig[i].Name}
 			if err := socket.SendRequest(conn, req); err != nil {
 				log.Fatal("failed to send request:", err)
 			}
@@ -83,7 +84,7 @@ func (r *Runner) RunWorker(name string) error {
 				}
 				defer conn.Close()
 
-				req := socket.Request{Action: "run", Name: name}
+				req := dmnsocket.Request{Action: "run", Name: name}
 				if err := socket.SendRequest(conn, req); err != nil {
 					log.Fatal("failed to send request:", err)
 				}
@@ -105,7 +106,7 @@ func (r *Runner) StopWorker(name string) error {
 	for i := 0; i < len(r.workersConfig.Workers); i++ {
 		workerConfig := r.workersConfig.Workers[i]
 		if workerConfig.Name == name {
-			req := socket.Request{Action: "stop", Name: name}
+			req := dmnsocket.Request{Action: "stop", Name: name}
 			if err := socket.SendRequest(conn, req); err != nil {
 				log.Fatal("failed to send request:", err)
 			}

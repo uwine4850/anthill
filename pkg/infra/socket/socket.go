@@ -8,11 +8,6 @@ import (
 	"github.com/uwine4850/anthill/pkg/config"
 )
 
-type Request struct {
-	Action string `json:"action"`
-	Name   string `json:"name"`
-}
-
 func ConnectToOrchestrator() (net.Conn, error) {
 	conn, err := net.Dial("unix", config.ANTHILL_SOCKET_PATH)
 	if err != nil {

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
-	"github.com/uwine4850/anthill/pkg/domain"
+	dmnprocess "github.com/uwine4850/anthill/pkg/domain/dmn_process"
 )
 
 const MAX_HISTORY_LEN = 300
@@ -27,7 +27,7 @@ type AntWorkerStreamer struct {
 	wg       sync.WaitGroup
 }
 
-func NewAntWorkerStreamer(antWorkerName string) domain.Streamer {
+func NewAntWorkerStreamer(antWorkerName string) dmnprocess.Streamer {
 	return &AntWorkerStreamer{
 		Name:    antWorkerName,
 		history: make([]string, 0, MAX_HISTORY_LEN),
@@ -86,22 +86,9 @@ func (s *AntWorkerStreamer) Stream() error {
 			// Clearing recorded channels before connecting to avoid duplication with history
 			s.drain()
 
-			go func(c net.Conn) {
-				defer c.Close()
-
-				s.mu.Lock()
-				for i := 0; i < len(s.history); i++ {
-					if _, err := fmt.Fprintln(c, s.history[i]); err != nil {
-						return
-					}
-				}
-				s.mu.Unlock()
-
-				for lineCh := range s.logs {
-					if _, err := fmt.Fprintln(c, lineCh); err != nil {
-						return
-					}
-				}
+			go func(_conn net.Conn) {
+				defer _conn.Close()
+				s.printLogs(_conn)
 			}(conn)
 		}
 	}()
@@ -113,6 +100,22 @@ func (s *AntWorkerStreamer) drain() {
 		select {
 		case <-s.logs:
 		default:
+			return
+		}
+	}
+}
+
+func (s *AntWorkerStreamer) printLogs(conn net.Conn) {
+	s.mu.Lock()
+	for i := 0; i < len(s.history); i++ {
+		if _, err := fmt.Fprintln(conn, s.history[i]); err != nil {
+			return
+		}
+	}
+	s.mu.Unlock()
+
+	for lineCh := range s.logs {
+		if _, err := fmt.Fprintln(conn, lineCh); err != nil {
 			return
 		}
 	}

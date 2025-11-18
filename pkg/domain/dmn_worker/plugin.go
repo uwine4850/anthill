@@ -1,4 +1,4 @@
-package domain
+package dmnworker
 
 type PluginsConfig struct {
 	Plugins []string

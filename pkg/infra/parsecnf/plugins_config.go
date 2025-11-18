@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
-	"github.com/uwine4850/anthill/pkg/domain"
+	dmnworker "github.com/uwine4850/anthill/pkg/domain/dmn_worker"
 	"gopkg.in/yaml.v3"
 )
 
-func ParsePlugins(configPath string) (*domain.PluginsConfig, error) {
+func ParsePlugins(configPath string) (*dmnworker.PluginsConfig, error) {
 	if err := pathutils.Exists(configPath); err != nil {
 		return nil, err
 	}
@@ -20,7 +20,7 @@ func ParsePlugins(configPath string) (*domain.PluginsConfig, error) {
 		return nil, err
 	}
 
-	var pluginsConfig domain.PluginsConfig
+	var pluginsConfig dmnworker.PluginsConfig
 	if err := yaml.Unmarshal(f, &pluginsConfig); err != nil {
 		return nil, err
 	}

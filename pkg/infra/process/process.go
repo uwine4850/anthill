@@ -8,18 +8,19 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/uwine4850/anthill/pkg/domain"
+	dmnprocess "github.com/uwine4850/anthill/pkg/domain/dmn_process"
+	dmnworker "github.com/uwine4850/anthill/pkg/domain/dmn_worker"
 )
 
 type AntWorkerProcess struct {
-	ants           *map[string]domain.PluginAnt
+	ants           *map[string]dmnworker.PluginAnt
 	runningWorkers *sync.Map
 	name           string
-	streamer       domain.Streamer
+	streamer       dmnprocess.Streamer
 	onDoneFn       func()
 }
 
-func (p *AntWorkerProcess) New(ants *map[string]domain.PluginAnt, name string) domain.AWorkerProcess {
+func (p *AntWorkerProcess) New(ants *map[string]dmnworker.PluginAnt, name string) dmnworker.AWorkerProcess {
 	return &AntWorkerProcess{
 		ants:           ants,
 		runningWorkers: &sync.Map{},
@@ -33,7 +34,7 @@ func (p *AntWorkerProcess) Run() error {
 	if !ok {
 		return fmt.Errorf("cannot run worker <%s>; it does not exists", p.name)
 	}
-	go func(ant domain.PluginAnt) {
+	go func(ant dmnworker.PluginAnt) {
 		defer p.streamer.Close()
 		defer p.onDoneFn()
 
@@ -81,7 +82,7 @@ func (p *AntWorkerProcess) OnDone(fn func()) {
 	p.onDoneFn = fn
 }
 
-func (p *AntWorkerProcess) initLauncher(pluginAnt *domain.PluginAnt) (cmd *exec.Cmd, stdout io.Reader, stderr io.Reader, err error) {
+func (p *AntWorkerProcess) initLauncher(pluginAnt *dmnworker.PluginAnt) (cmd *exec.Cmd, stdout io.Reader, stderr io.Reader, err error) {
 	cmd = exec.Command("./launcher", append([]string{pluginAnt.Path}, pluginAnt.Args...)...)
 	cmdStdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -104,7 +105,7 @@ func (p *AntWorkerProcess) initAndRunStreamer(stdout io.Reader, stderr io.Reader
 	return nil
 }
 
-func (p *AntWorkerProcess) killAndReloadOnError(pluginAnt domain.PluginAnt) error {
+func (p *AntWorkerProcess) killAndReloadOnError(pluginAnt dmnworker.PluginAnt) error {
 	if pluginAnt.Reload {
 		if err := p.kill(); err != nil {
 			return err

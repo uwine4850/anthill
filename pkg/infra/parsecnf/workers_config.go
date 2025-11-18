@@ -6,12 +6,12 @@ import (
 	"slices"
 
 	"github.com/uwine4850/anthill/internal/pathutils"
-	"github.com/uwine4850/anthill/pkg/domain"
+	dmnworker "github.com/uwine4850/anthill/pkg/domain/dmn_worker"
 	"gopkg.in/yaml.v3"
 )
 
 type WorkersConfig struct {
-	Workers []domain.WorkerConfig
+	Workers []dmnworker.WorkerConfig
 }
 
 func ParseWorkers(configPath string) (*WorkersConfig, error) {

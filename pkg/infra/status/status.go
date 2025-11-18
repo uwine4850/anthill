@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	dmnsocket "github.com/uwine4850/anthill/pkg/domain/dmn_socket"
 	"github.com/uwine4850/anthill/pkg/infra/parsecnf"
 	"github.com/uwine4850/anthill/pkg/infra/socket"
 )
@@ -111,7 +112,7 @@ func SendWorkerResponse(conn net.Conn, workerName string, status Status) error {
 }
 
 func CheckAllStatus() error {
-	req := socket.Request{Action: "status"}
+	req := dmnsocket.Request{Action: "status"}
 	conn, err := socket.ConnectToOrchestrator()
 	if err != nil {
 		return err
@@ -142,7 +143,7 @@ func CheckStatus(name string) (*WorkerStatusData, error) {
 	}
 	defer conn.Close()
 
-	req := socket.Request{Action: "status", Name: name}
+	req := dmnsocket.Request{Action: "status", Name: name}
 	if err := socket.SendRequest(conn, &req); err != nil {
 		return nil, err
 	}

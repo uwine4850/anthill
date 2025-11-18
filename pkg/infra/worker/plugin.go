@@ -3,18 +3,18 @@ package worker
 import (
 	"fmt"
 
-	"github.com/uwine4850/anthill/pkg/domain"
+	dmnworker "github.com/uwine4850/anthill/pkg/domain/dmn_worker"
 	"github.com/uwine4850/anthill/pkg/infra/plug"
 )
 
-func ExtractPluginAntsFromPlugins(pluginsConfig domain.PluginsConfig) (map[string]domain.PluginAnt, error) {
+func ExtractPluginAntsFromPlugins(pluginsConfig dmnworker.PluginsConfig) (map[string]dmnworker.PluginAnt, error) {
 	builtinList, err := plug.BuiltinList()
 	if err != nil {
 		return nil, err
 	}
 	pluginsList := append(pluginsConfig.Plugins, builtinList...)
 
-	pluginAnts := make(map[string]domain.PluginAnt, len(pluginsList))
+	pluginAnts := make(map[string]dmnworker.PluginAnt, len(pluginsList))
 	for i := 0; i < len(pluginsList); i++ {
 		pluginPath := pluginsList[i]
 		workerAnt, err := WorkerAntFromPlugin(pluginPath)
@@ -22,7 +22,7 @@ func ExtractPluginAntsFromPlugins(pluginsConfig domain.PluginsConfig) (map[strin
 			return nil, err
 		}
 		if _, ok := pluginAnts[workerAnt.Type()]; !ok {
-			pluginAnts[workerAnt.Type()] = domain.PluginAnt{
+			pluginAnts[workerAnt.Type()] = dmnworker.PluginAnt{
 				Path:      pluginPath,
 				WorkerAnt: workerAnt,
 			}
@@ -33,11 +33,11 @@ func ExtractPluginAntsFromPlugins(pluginsConfig domain.PluginsConfig) (map[strin
 	return pluginAnts, nil
 }
 
-func WorkerAntFromPlugin(path string) (domain.WorkerAnt, error) {
+func WorkerAntFromPlugin(path string) (dmnworker.WorkerAnt, error) {
 	plugin, err := plug.OpenPlugin(path)
 	if err != nil {
 		return nil, err
 	}
-	workerAnt := (*plugin).(domain.WorkerAnt)
+	workerAnt := (*plugin).(dmnworker.WorkerAnt)
 	return workerAnt, nil
 }

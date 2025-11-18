@@ -11,31 +11,31 @@ import (
 
 	"github.com/uwine4850/anthill/internal/pathutils"
 	"github.com/uwine4850/anthill/pkg/config"
-	"github.com/uwine4850/anthill/pkg/domain"
+	dmnsocket "github.com/uwine4850/anthill/pkg/domain/dmn_socket"
+	dmnworker "github.com/uwine4850/anthill/pkg/domain/dmn_worker"
 	"github.com/uwine4850/anthill/pkg/infra/parsecnf"
 	"github.com/uwine4850/anthill/pkg/infra/process"
-	"github.com/uwine4850/anthill/pkg/infra/socket"
 	"github.com/uwine4850/anthill/pkg/infra/status"
 	"github.com/uwine4850/anthill/pkg/infra/worker"
 )
 
-type AfterWorker struct {
+type afterWorker struct {
 	Conn      net.Conn
-	PluginAnt domain.PluginAnt
-	Request   socket.Request
+	PluginAnt dmnworker.PluginAnt
+	Request   dmnsocket.Request
 }
 
 type Orchestrator struct {
-	currentAnts          map[string]domain.PluginAnt
+	currentAnts          map[string]dmnworker.PluginAnt
 	workersConfig        *parsecnf.WorkersConfig
 	status               status.Status
-	antWorkerProcess     domain.AWorkerProcess
+	antWorkerProcess     dmnworker.AWorkerProcess
 	startAfterWorkerAnts sync.Map
 }
 
 func NewOrchestartor() Orchestrator {
 	return Orchestrator{
-		currentAnts:          make(map[string]domain.PluginAnt, 0),
+		currentAnts:          make(map[string]dmnworker.PluginAnt, 0),
 		status:               status.NewStatus(),
 		antWorkerProcess:     &process.AntWorkerProcess{},
 		startAfterWorkerAnts: sync.Map{},
@@ -61,7 +61,7 @@ func (o *Orchestrator) CollectAnts() error {
 	}
 	o.workersConfig = workersc
 
-	currentAnts, err := worker.CurrentAnts1(workersc, pluginAnts)
+	currentAnts, err := worker.CurrentAnts(workersc, pluginAnts)
 	if err != nil {
 		return err
 	}
@@ -100,13 +100,13 @@ func (o *Orchestrator) Listen() error {
 			continue
 		}
 		go func() {
-			var req socket.Request
+			var req dmnsocket.Request
 			decoder := json.NewDecoder(conn)
 			if err := decoder.Decode(&req); err != nil {
 				log.Printf("decode error: %s\n", err)
 			}
 			if len(o.currentAnts[req.Name].After) != 0 {
-				o.startAfterWorkerAnts.Store(conn, AfterWorker{
+				o.startAfterWorkerAnts.Store(conn, afterWorker{
 					Conn:      conn,
 					PluginAnt: o.currentAnts[req.Name],
 					Request:   req,
@@ -120,7 +120,7 @@ func (o *Orchestrator) Listen() error {
 	}
 }
 
-func (o *Orchestrator) handleConnection(conn net.Conn, req socket.Request) error {
+func (o *Orchestrator) handleConnection(conn net.Conn, req dmnsocket.Request) error {
 	defer conn.Close()
 	p := o.antWorkerProcess.New(&o.currentAnts, req.Name)
 	p.OnDone(func() {
@@ -162,9 +162,9 @@ func (o *Orchestrator) handleConnection(conn net.Conn, req socket.Request) error
 
 func (o *Orchestrator) runDependentWorkers() {
 	for {
-		mustRunWorkers := []AfterWorker{}
+		mustRunWorkers := []afterWorker{}
 		o.startAfterWorkerAnts.Range(func(key, value any) bool {
-			afterWorker := value.(AfterWorker)
+			afterWorker := value.(afterWorker)
 			isAllDone := false
 			for i := 0; i < len(afterWorker.PluginAnt.After); i++ {
 				s, ok := o.status.Get()[afterWorker.PluginAnt.After[i]]
